@@ -18,14 +18,14 @@ More details can be found in our manuscript:
 
 https://www.biorxiv.org/content/10.1101/608794v2
 
-We recommend users to have a look at the vignette: https://htmlpreview.github.io/?https://github.com/lcalviell/ORFquant/blob/master/ORFquant_vignette.html, or our manual (*ORFquant_manual.pdf*).
+We recommend users to have a look at the vignette: https://htmlpreview.github.io/?https://github.com/ohlerlabl/ORFquant/blob/master/ORFquant_vignette.html, or our manual (*ORFquant_manual.pdf*).
 
 
 To install *ORFquant*:
 
 ```
 library("devtools")
-install_github(repo = "lcalviell/ORFquant")
+install_github(repo = "ohlerlabl/ORFquant")
 
 library("ORFquant")
 
@@ -41,7 +41,7 @@ parses a *.gtf* and a *.2bit* file. (this need to be done once per each annotati
 ```
 ?prepare_for_ORFquant
 ```
-or (**recommended**) the *Ribo-seQC* package (https://github.com/lcalviell/Ribo-seQC) can create input files for *ORFquant* using a Ribo-seq .bam file.
+or (**recommended**) the *Ribo-seQC* package (https://github.com/ohlerlabl/Ribo-seQC) can create input files for *ORFquant* using a Ribo-seq .bam file.
 
 
 ```

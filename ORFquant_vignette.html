@@ -273,7 +273,7 @@ div.tocify {
 </div>
 <div id="exploring-the-annotation" class="section level2">
 <h2>Exploring the annotation</h2>
-<p>As in the <em>Ribo-seQC</em> package [2] (<a href="https://github.com/lcalviell/Ribo-seQC" class="uri">https://github.com/lcalviell/Ribo-seQC</a>), we use a .gtf file and a .2bit file to create a comprehensive list of annotated transcript and genomic features. Let’s now download annotation for <em>Homo sapiens</em>: a subset of the GENCODE 25 annotation (<a href="https://www.gencodegenes.org/human/release_25.html" class="uri">https://www.gencodegenes.org/human/release_25.html</a>) and the corresponding genome sequences.</p>
+<p>As in the <em>Ribo-seQC</em> package [2] (<a href="https://github.com/ohlerlabl/Ribo-seQC" class="uri">https://github.com/ohlerlabl/Ribo-seQC</a>), we use a .gtf file and a .2bit file to create a comprehensive list of annotated transcript and genomic features. Let’s now download annotation for <em>Homo sapiens</em>: a subset of the GENCODE 25 annotation (<a href="https://www.gencodegenes.org/human/release_25.html" class="uri">https://www.gencodegenes.org/human/release_25.html</a>) and the corresponding genome sequences.</p>
 <pre class="r"><code>download.file(&quot;https://drive.google.com/uc?export=download&amp;id=1n6UA5cSz6djx0dY_7sI57177T-kyZhhT&quot;,destfile = &quot;test_human.2bit&quot;)
 download.file(&quot;https://drive.google.com/uc?export=download&amp;id=19Am9-iMEyB-AcIsVRdIqrF-BVdQYrcaI&quot;,destfile = &quot;test_human.gtf&quot;)</code></pre>
 <p>To parse the rich information present in our <em>.gtf</em> file we use the <em>prepare_annotation_files</em> function. Such a function creates a <em>TxDb</em> and a compressed <em>Rdata</em> file containing several regions of interest and additional information. Moreover, such function reads a genome file in <em>.2bit</em> to forge a <em>BSgenome</em> package for fast and efficient query of genomic sequences. A <em>.2bit</em> file can be obtained from a <em>.fasta</em> file using the <em>faToTwoBit</em> software from UCSC: <a href="https://genome.ucsc.edu/goldenpath/help/twoBit.html" class="uri">https://genome.ucsc.edu/goldenpath/help/twoBit.html</a> - <a href="http://hgdownload.soe.ucsc.edu/admin/exe/" class="uri">http://hgdownload.soe.ucsc.edu/admin/exe/</a> )</p>
@@ -282,14 +282,14 @@ download.file(&quot;https://drive.google.com/uc?export=download&amp;id=19Am9-iME
                          gtf_file = &quot;test_human.gtf&quot;,scientific_name = &quot;Human.test&quot;,
                          annotation_name = &quot;genc25_22M&quot;,export_bed_tables_TxDb = F,forge_BSgenome = T,create_TxDb = T)</code></pre>
 <pre><code>## Creating the BSgenome package ... Wed Sep 18 18:21:56 2019
-## Creating package in /bfd/lcalviel/ORFquant/test_vignette/BSgenome.Human.test.genc2522M 
-## Copying '/bfd/lcalviel/ORFquant/test_vignette/test_human.2bit' to '/bfd/lcalviel/ORFquant/test_vignette/BSgenome.Human.test.genc2522M/inst/extdata/single_sequences.2bit' ... DONE
+## Creating package in /bfd/ohlerlab/ORFquant/test_vignette/BSgenome.Human.test.genc2522M 
+## Copying '/bfd/ohlerlab/ORFquant/test_vignette/test_human.2bit' to '/bfd/ohlerlab/ORFquant/test_vignette/BSgenome.Human.test.genc2522M/inst/extdata/single_sequences.2bit' ... DONE
 ## Creating the BSgenome package --- Done! Wed Sep 18 18:21:56 2019
 ## Installing the BSgenome package ... Wed Sep 18 18:21:56 2019
 ##   
-   checking for file ‘/bfd/lcalviel/ORFquant/test_vignette/BSgenome.Human.test.genc2522M/DESCRIPTION’ ...
+   checking for file ‘/bfd/ohlerlab/ORFquant/test_vignette/BSgenome.Human.test.genc2522M/DESCRIPTION’ ...
   
-✔  checking for file ‘/bfd/lcalviel/ORFquant/test_vignette/BSgenome.Human.test.genc2522M/DESCRIPTION’
+✔  checking for file ‘/bfd/ohlerlab/ORFquant/test_vignette/BSgenome.Human.test.genc2522M/DESCRIPTION’
 ## 
   
 ─  preparing ‘BSgenome.Human.test.genc2522M’:
@@ -312,7 +312,7 @@ download.file(&quot;https://drive.google.com/uc?export=download&amp;id=19Am9-iME
 Running /usr/local/lib/R/bin/R CMD INSTALL \
 ##   /tmp/RtmprvVZ7E/BSgenome.Human.test.genc2522M_1.0.tar.gz \
 ##   --install-tests 
-## * installing to library ‘/bfd/lcalviel/R/x86_64-pc-linux-gnu-library/3.6’
+## * installing to library ‘/bfd/ohlerlab/R/x86_64-pc-linux-gnu-library/3.6’
 ## * installing *source* package ‘BSgenome.Human.test.genc2522M’ ...
 ## ** using staged installation
 ## ** R
@@ -878,7 +878,7 @@ download.file(&quot;https://drive.google.com/uc?export=download&amp;id=1xKV_oQbC
 ##  zeallot                         0.1.0     2018-01-28 [1] CRAN (R 3.6.1)
 ##  zlibbioc                        1.30.0    2019-05-02 [1] Bioconductor  
 ## 
-## [1] /bfd/lcalviel/R/x86_64-pc-linux-gnu-library/3.6
+## [1] /bfd/ohlerlab/R/x86_64-pc-linux-gnu-library/3.6
 ## [2] /usr/local/lib/R/site-library
 ## [3] /usr/local/lib/R/library</code></pre>
 </div>
