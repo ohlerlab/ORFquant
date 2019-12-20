@@ -2992,7 +2992,74 @@ run_ORFquant<-function(for_ORFquant_file,annotation_file,n_cores,prefix=for_ORFq
     cat(paste("Loading annotation and Ribo-seq signal ... ",date(),"\n",sep = ""))
     
     load_annotation(annotation_file)
-    for_ORFquant_data<-get(load(for_ORFquant_file))
+        
+       ##If we have only one object specified, use that, otherwise combine them all
+    message('loading p site data')
+    if(length(for_ORFquant_file)>1){
+        stopifnot(length(prefix)==1)
+
+        load_obj <- function(f){
+            env <- new.env()
+            nms <- load(f, env)
+            lapply(nms,message)
+            stopifnot(length(nms)==1)
+            env[[nms[[1]]]]
+        }
+
+    add_scoregranges <- function(grs,addcols='score',idcols=NULL){
+      scores <- grs[[1]]
+      require(magrittr)
+      if(length(grs)>1){
+        for(i in 2:length(grs)){
+          
+
+          matchinds <- match(scores,grs[[i]])
+          for(idcol in idcols){
+            colmatch <-(
+                mcols(scores)[[idcol]][!is.na(matchinds)] == 
+                  mcols(grs[[i]])[[idcol]][na.omit(matchinds)]
+            )
+
+            matchinds[!all(colmatch)] <- NA
+          }
+          nomatchinds <- setdiff(seq_along(grs[[i]]), matchinds)
+          for(addcol in addcols[1]){
+            mcols(scores)[[addcol]][!is.na(matchinds)] %<>%add(mcols(grs[[i]])[[addcol]][na.omit(matchinds)])
+          }
+          scores <- c(scores,grs[[i]][nomatchinds,])
+        }
+      }
+      sort(scores) 
+    }
+
+      loadobs <- for_ORFquant_file
+      haspsites <- file.exists(loadobs) & (file.info(loadobs)$size>0)
+      nonzeroloadobs <- loadobs[haspsites]
+      if(!any(haspsites)) stop('None of the supplied objects have p sites')
+
+
+      message('loading');message(nonzeroloadobs[[1]])
+      for_ORFquant_data<-load_obj(nonzeroloadobs[1])
+      for(i in seq_along(nonzeroloadobs)[-1]){
+      # for(i in 2){
+        message('loading');message(nonzeroloadobs[[i]])
+        for_ORFquant_data2 <- load_obj(nonzeroloadobs[[i]])
+        for_ORFquant_data$P_sites_all <- add_scoregranges(list(for_ORFquant_data$P_sites_all,for_ORFquant_data2$P_sites_all)) 
+        for_ORFquant_data$P_sites_uniq <- add_scoregranges(list(for_ORFquant_data$P_sites_uniq,for_ORFquant_data2$P_sites_uniq)) 
+        for_ORFquant_data$P_sites_uniq_mm <- add_scoregranges(list(for_ORFquant_data$P_sites_uniq_mm,for_ORFquant_data2$P_sites_uniq_mm)) 
+        for_ORFquant_data$junctions <- add_scoregranges(
+          list(for_ORFquant_data$junctions,for_ORFquant_data2$junctions),
+          addcols=c('reads','unique_reads'),
+          idcols = c('tx_name','gene_id')
+        ) 
+        rm(for_ORFquant_data2)
+      }
+    }else{
+        for_ORFquant_data<-get(load(for_ORFquant_file))
+    }
+
+
+
     
     genes_red<-reduce(unlist(GTF_annotation$txs_gene))
     
@@ -3194,7 +3261,7 @@ run_ORFquant<-function(for_ORFquant_file,annotation_file,n_cores,prefix=for_ORFq
         ORFquant_results<<-ORFquant_results
     }
     cat(paste("Exporting ORFquant results --- Done! ",date(),"\n",sep = ""))
-    
+    ORFquant_results
 }
 
 
@@ -3208,10 +3275,15 @@ run_ORFquant<-function(for_ORFquant_file,annotation_file,n_cores,prefix=for_ORFq
 #' @seealso \code{\link{prepare_annotation_files}}
 #' @export
 
+
 load_annotation<-function(path){
     GTF_annotation<-get(load(path))
-    library(GTF_annotation$genome_package,character.only = T)
-    genome_sequence<-get(GTF_annotation$genome_package)
+    if(is(GTF_annotation$genome,'FaFile')){
+        genome_sequence <- GTF_annotation$genome            
+    }else{
+        library(GTF_annotation$genome_package,character.only = T)
+        genome_sequence<-get(GTF_annotation$genome_package)
+    }
     GTF_annotation<<-GTF_annotation
     genome_seq<<-genome_sequence
 }
@@ -3219,59 +3291,12 @@ load_annotation<-function(path){
 
 
 
-#' Prepare comprehensive sets of annotated genomic features
-#'
-#' This function processes a gtf file and a twobit file (created using faToTwoBit from ucsc tools: http://hgdownload.soe.ucsc.edu/admin/exe/ ) to create a comprehensive set of genomic regions of interest in genomic and transcriptomic space (e.g. introns, UTRs, start/stop codons).
-#'    In addition, by linking genome sequence and annotation, it extracts additional info, such as gene and transcript biotypes, genetic codes for different organelles, or chromosomes and transcripts lengths.
-#' @keywords ORFquant, RiboseQC
-#' @author Lorenzo Calviello, \email{calviello.l.bio@@gmail.com}
-#' @param annotation_directory The target directory which will contain the output files
-#' @param twobit_file Full path to the genome file in twobit format
-#' @param gtf_file Full path to the annotation file in GTF format
-#' @param scientific_name A name to give to the organism studied; must be two words separated by a ".", defaults to Homo.sapiens
-#' @param annotation_name A name to give to annotation used; defaults to genc25
-#' @param export_bed_tables_TxDb Export coordinates and info about different genomic regions in the annotation_directory? It defaults to \code{TRUE}
-#' @param forge_BSgenome Forge and install a \code{BSgenome} package? It defaults to \code{TRUE}
-#' @param create_TxDb Create a \code{TxDb} object and a *Rannot object? It defaults to \code{TRUE}
-#' @details This function uses the \code{makeTxDbFromGFF} function to  create a TxDb object and extract
-#' genomic regions and other info to a *Rannot R file; the \code{mapToTranscripts} and \code{mapFromTranscripts} functions are used to 
-#' map features to genomic or transcript-level coordinates. GTF file mist contain "exon" and "CDS" lines,
-#' where each line contains "transcript_id" and "gene_id" values. Additional values such as "gene_biotype" or "gene_name" are also extracted.
-#' Regarding sequences, the twobit file, together with input scientific and annotation names, is used to forge and install a 
-#' BSgenome package using the \code{forgeBSgenomeDataPkg} function.\cr\cr
-#' The resulting GTF_annotation object (obtained after runnning \code{load_annotation}) contains:\cr\cr
-#' \code{txs}: annotated transcript boundaries.\cr
-#' \code{txs_gene}: GRangesList including transcript grouped by gene.\cr
-#' \code{seqinfo}: indicating chromosomes and chromosome lengths.\cr
-#' \code{start_stop_codons}: the set of annotated start and stop codon, with respective transcript and gene_ids.
-#' reprentative_mostcommon,reprentative_boundaries and reprentative_5len represent the most common start/stop codon,
-#' the most upstream/downstream start/stop codons and the start/stop codons residing on transcripts with the longest 5'UTRs\cr
-#' \code{cds_txs}: GRangesList including CDS grouped by transcript.\cr
-#' \code{introns_txs}: GRangesList including introns grouped by transcript.\cr
-#' \code{cds_genes}: GRangesList including CDS grouped by gene.\cr
-#' \code{exons_txs}: GRangesList including exons grouped by transcript.\cr
-#' \code{exons_bins}: the list of exonic bins with associated transcripts and genes.\cr
-#' \code{junctions}: the list of annotated splice junctions, with associated transcripts and genes.\cr
-#' \code{genes}: annotated genes coordinates.\cr
-#' \code{threeutrs}: collapsed set of 3'UTR regions, with correspinding gene_ids. This set does not overlap CDS region.\cr
-#' \code{fiveutrs}: collapsed set of 5'UTR regions, with correspinding gene_ids. This set does not overlap CDS region.\cr
-#' \code{ncIsof}: collapsed set of exonic regions of protein_coding genes, with correspinding gene_ids. This set does not overlap CDS region.\cr
-#' \code{ncRNAs}: collapsed set of exonic regions of non_coding genes, with correspinding gene_ids. This set does not overlap CDS region.\cr
-#' \code{introns}: collapsed set of intronic regions, with correspinding gene_ids. This set does not overlap exonic region.\cr
-#' \code{intergenicRegions}: set of intergenic regions, defined as regions with no annotated genes on either strand.\cr
-#' \code{trann}: DataFrame object including (when available) the mapping between gene_id, gene_name, gene_biotypes, transcript_id and transcript_biotypes.\cr
-#' \code{cds_txs_coords}: transcript-level coordinates of ORF boundaries, for each annotated coding transcript. Additional columns are the same as as for the \code{start_stop_codons} object.\cr
-#' \code{genetic_codes}: an object containing the list of genetic code ids used for each chromosome/organelle. see GENETIC_CODE_TABLE for more info.\cr
-#' \code{genome_package}: the name of the forged BSgenome package. Loaded with \code{load_annotation} function.\cr
-#' \code{stop_in_gtf}: stop codon, as defined in the annotation.\cr
-#' @return a TxDb file and a *Rannot files are created in the specified \code{annotation_directory}. 
-#' In addition, a BSgenome object is forged, installed, and linked to the *Rannot object
-#' @seealso \code{\link{load_annotation}}, \code{\link{forgeBSgenomeDataPkg}}, \code{\link{makeTxDbFromGFF}}, \code{\link{run_ORFquant}}.
-#' @export
 
-prepare_annotation_files<-function(annotation_directory,twobit_file,gtf_file,scientific_name="Homo.sapiens",annotation_name="genc25",export_bed_tables_TxDb=T,forge_BSgenome=T,create_TxDb=T){
-    
-    
+
+prepare_annotation_files<-function(annotation_directory,twobit_file=NULL,gtf_file,scientific_name="Homo.sapiens",
+                                   annotation_name="genc25",export_bed_tables_TxDb=TRUE,forge_BSgenome=FALSE,genome_seq=NULL,circ_chroms=DEFAULT_CIRC_SEQS,create_TxDb=TRUE){
+
+
     DEFAULT_CIRC_SEQS <- unique(c("chrM","MT","MtDNA","mit","Mito","mitochondrion",
                                   "dmel_mitochondrion_genome","Pltd","ChrC","Pt","chloroplast",
                                   "Chloro","2micron","2-micron","2uM",
@@ -3279,37 +3304,51 @@ prepare_annotation_files<-function(annotation_directory,twobit_file,gtf_file,sci
     #adjust variable names (some chars not permitted)
     annotation_name<-gsub(annotation_name,pattern = "_",replacement = "")
     annotation_name<-gsub(annotation_name,pattern = "-",replacement = "")
-    if(!dir.exists(annotation_directory)){dir.create(path = annotation_directory,recursive = T)}
+    if(!dir.exists(annotation_directory)){dir.create(path = annotation_directory,recursive = TRUE)}
     annotation_directory<-normalizePath(annotation_directory)
-    twobit_file<-normalizePath(twobit_file)
     gtf_file<-normalizePath(gtf_file)
-    
-    for (f in c(twobit_file,gtf_file)){
+
+    for (f in c(gtf_file)){
         if(file.access(f, 0)==-1) {
             stop("
                  The following files don't exist:\n",
                  f, "\n")
         }
     }
-    
-    
-    scientific_name_spl<-strsplit(scientific_name,"[.]")[[1]]
-    ok<-length(scientific_name_spl)==2
-    if(!ok){stop("\"scientific_name\" must be two words separated by a \".\", like \"Homo.sapiens\"")}
-    
+
+
     #get circular sequences
-    
-    seqinfotwob<-seqinfo(TwoBitFile(twobit_file))
-    circss<-seqnames(seqinfotwob)[which(seqnames(seqinfotwob)%in%DEFAULT_CIRC_SEQS)]
-    seqinfotwob@is_circular[which(seqnames(seqinfotwob)%in%DEFAULT_CIRC_SEQS)]<-TRUE
-    pkgnm<-paste("BSgenome",scientific_name,annotation_name,sep=".")
-    
-    circseed<-circss
-    if(length(circseed)==0){circseed<-NULL}
-    
+
     #Forge a BSGenome package
-    
+
     if(forge_BSgenome){
+        stopifnot(!is.null(twobit_file))
+        scientific_name_spl<-strsplit(scientific_name,"[.]")[[1]]
+        ok<-length(scientific_name_spl)==2
+        if(!ok){stop("\"scientific_name\" must be two words separated by a \".\", like \"Homo.sapiens\"")}
+
+
+        twobit_file<-normalizePath(twobit_file)
+
+        for (f in c(twobit_file)){
+            if(file.access(f, 0)==-1) {
+                stop("
+                     The following files don't exist:\n",
+                     f, "\n")
+            }
+        }
+
+        seqinfotwob<-seqinfo(TwoBitFile(twobit_file))
+        circss<-seqnames(seqinfotwob)[which(seqnames(seqinfotwob)%in%circ_chroms)]
+        seqinfotwob@is_circular[which(seqnames(seqinfotwob)%in%circ_chroms)]<-TRUE
+
+
+        circseed<-circss
+        if(length(circseed)==0){circseed<-NULL}
+
+        pkgnm<-paste("BSgenome",scientific_name,annotation_name,sep=".")
+
+
         cat(paste("Creating the BSgenome package ... ",date(),"\n",sep = ""))
         seed_text<-paste("Package: BSgenome.",scientific_name,".",annotation_name,"\n",
                          "Title: Full genome sequences for ",scientific_name,", ",annotation_name,"\n",
@@ -3326,69 +3365,80 @@ prepare_annotation_files<-function(annotation_directory,twobit_file,gtf_file,sci
                          "BSgenomeObjname: ",scientific_name,"\n",
                          "seqs_srcdir: ",dirname(twobit_file),"\n",
                          "seqfile_name: ",basename(twobit_file),sep="")
-        
-        
+
+
         seed_dest<-paste(annotation_directory,"/",basename(twobit_file),"_",scientific_name,"_seed",sep = "")
-        
+
+
         if(length(circseed)==0){
             writeLines(text = seed_text,con = seed_dest)
         }
+
         if(length(circseed)==1){
             seed_text<-paste(seed_text,"\n",
                              "circ_seqs: \"",circseed,"\"",sep="")
-            writeLines(text = seed_text,con = seed_dest)
         }
-        
+
         if(length(circseed)>1){
             circseed<-paste('c("',paste(circseed,collapse=","),'")',sep="")
             circseed<-gsub(circseed,pattern = ",",replacement='","')
-            
+
             cat(seed_text,"\n","circ_seqs: ",circseed,"\n",sep="",file = seed_dest)
         }
-        
-        
-        
-        unlink(paste(annotation_directory,pkgnm,sep="/"),recursive=T)
-        
+
+        writeLines(text = seed_text,con = seed_dest)
+
+        unlink(paste(annotation_directory,pkgnm,sep="/"),recursive=TRUE)
+
         forgeBSgenomeDataPkg(x=seed_dest,destdir=annotation_directory,seqs_srcdir=dirname(twobit_file))
         cat(paste("Creating the BSgenome package --- Done! ",date(),"\n",sep = ""))
-        
+
         cat(paste("Installing the BSgenome package ... ",date(),"\n",sep = ""))
-        
-        install(paste(annotation_directory,pkgnm,sep="/"),upgrade = F)
+
+        install(paste(annotation_directory,pkgnm,sep="/"),upgrade = FALSE)
         cat(paste("Installing the BSgenome package --- Done! ",date(),"\n",sep = ""))
-        
+
+        seqinfo_genome <- seqinfotwob
+    }else{
+        if(!is(genome_seq,'FaFile')){
+            genome_seq <- Rsamtools::FaFile(genome_seq)
+        }
+        if(!is(genome_seq,'FaFile_Circ')){
+            genome_seq <- FaFile_Circ(genome_seq,circularRanges=circ_chroms)
+        }
+        seqinfo_genome<-seqinfo(genome_seq)
+        seqinfo_genome@is_circular[which(seqnames(seqinfo_genome)%in%circ_chroms)]<-TRUE
     }
-    
     #Create the TxDb from GTF and BSGenome info
-    
+
     if(create_TxDb){
         cat(paste("Creating the TxDb object ... ",date(),"\n",sep = ""))
-        
-        annotation<-makeTxDbFromGFF(file=gtf_file,format="gtf",chrominfo = seqinfotwob)
-        
+
+        annotation<-makeTxDbFromGFF(file=gtf_file,format="gtf",chrominfo = seqinfo_genome)
+
         saveDb(annotation, file=paste(annotation_directory,"/",basename(gtf_file),"_TxDb",sep=""))
         cat(paste("Creating the TxDb object --- Done! ",date(),"\n",sep = ""))
         cat(paste("Extracting genomic regions ... ",date(),"\n",sep = ""))
-        
+
+
         genes<-genes(annotation)
+        stopifnot(length(genes)>0)
         exons_ge<-exonsBy(annotation,by="gene")
-        exons_ge<-reduce(exons_ge)
-        
+        exons_ge<-GenomicRanges::reduce(exons_ge)
+
         cds_gen<-cdsBy(annotation,"gene")
         cds_ge<-reduce(cds_gen)
-        
-        
+
         #define regions not overlapping CDS ( or exons when defining introns)
-        
+
         threeutrs<-reduce(GenomicRanges::setdiff(unlist(threeUTRsByTranscript(annotation)),unlist(cds_ge),ignore.strand=FALSE))
-        
+
         fiveutrs<-reduce(GenomicRanges::setdiff(unlist(fiveUTRsByTranscript(annotation)),unlist(cds_ge),ignore.strand=FALSE))
-        
+
         introns<-reduce(GenomicRanges::setdiff(unlist(intronsByTranscript(annotation)),unlist(exons_ge),ignore.strand=FALSE))
-        
+
         nc_exons<-reduce(GenomicRanges::setdiff(unlist(exons_ge),reduce(c(unlist(cds_ge),fiveutrs,threeutrs)),ignore.strand=FALSE))
-        
+
         #assign gene ids (mutiple when overlapping multiple genes)
         ov<-findOverlaps(threeutrs,genes)
         ov<-split(subjectHits(ov),queryHits(ov))
@@ -3402,34 +3452,37 @@ prepare_annotation_files<-function(annotation_directory,twobit_file,gtf_file,sci
         ov<-findOverlaps(nc_exons,genes)
         ov<-split(subjectHits(ov),queryHits(ov))
         nc_exons$gene_id<-CharacterList(lapply(ov,FUN = function(x){names(genes)[x]}))
-        
+
         intergenicRegions<-genes
         strand(intergenicRegions)<-"*"
         intergenicRegions <- gaps(reduce(intergenicRegions))
         intergenicRegions<-intergenicRegions[strand(intergenicRegions)=="*"]
-        
-        cds_tx<-cdsBy(annotation,"tx",use.names=T)
+
+        cds_tx<-cdsBy(annotation,"tx",use.names=TRUE)
+
+        #filter out abnormally short cds (I"m looking at you maize annotation)
+        cds_tx <- cds_tx[sum(width(cds_tx))>=3]
         txs_gene<-transcriptsBy(annotation,by="gene")
         genes_red<-reduce(sort(genes(annotation)))
-        
-        exons_tx<-exonsBy(annotation,"tx",use.names=T)
-        
+
+        exons_tx<-exonsBy(annotation,"tx",use.names=TRUE)
+
         transcripts_db<-transcripts(annotation)
-        intron_names_tx<-intronsByTranscript(annotation,use.names=T)
-        
-        
+        intron_names_tx<-intronsByTranscript(annotation,use.names=TRUE)
+
+
         #define exonic bins, including regions overlapping multiple genes
-        nsns<-disjointExons(annotation,aggregateGenes=T)
-        
-        
-        
+        nsns<-disjointExons(annotation,aggregateGenes=TRUE)
+
+
+
         #define tx_coordinates of ORF boundaries
-        
+
         exsss_cds<-exons_tx[names(cds_tx)]
         chunks<-seq(1,length(cds_tx),by = 20000)
         if(chunks[length(chunks)]<length(cds_tx)){chunks<-c(chunks,length(cds_tx))}
         mapp<-GRangesList()
-        for(i in 1:(length(chunks)-1)){
+        for(i in seq_len(length(chunks)-1)){
             if(i!=(length(chunks)-1)){
                 mapp<-suppressWarnings(c(mapp,pmapToTranscripts(cds_tx[chunks[i]:(chunks[i+1]-1)],transcripts = exsss_cds[chunks[i]:(chunks[i+1]-1)])))
             }
@@ -3438,153 +3491,161 @@ prepare_annotation_files<-function(annotation_directory,twobit_file,gtf_file,sci
             }
         }
         cds_txscoords<-unlist(mapp)
-        
-        
+
+
         #extract biotypes and ids
-        
+
         cat(paste("Extracting ids and biotypes ... ",date(),"\n",sep = ""))
-        
+
         trann<-unique(mcols(import.gff2(gtf_file,colnames=c("gene_id","gene_biotype","gene_type","gene_name","gene_symbol","transcript_id","transcript_biotype","transcript_type"))))
         trann<-trann[!is.na(trann$transcript_id),]
-        trann<-data.frame(unique(trann),stringsAsFactors=F)
-        
+        trann<-data.frame(unique(trann),stringsAsFactors=FALSE)
+
         if(sum(!is.na(trann$transcript_biotype))==0 & sum(!is.na(trann$transcript_type))==0 ){
             trann$transcript_biotype<-"no_type"
         }
         if(sum(!is.na(trann$transcript_biotype))==0){trann$transcript_biotype<-NULL}
         if(sum(!is.na(trann$transcript_type))==0){trann$transcript_type<-NULL}
-        
-        
+
+
         if(sum(!is.na(trann$gene_biotype))==0 & sum(!is.na(trann$gene_type))==0 ){
-            
+
             trann$gene_type<-"no_type"
-            
+
         }
         if(sum(!is.na(trann$gene_name))==0 & sum(!is.na(trann$gene_symbol))==0 ){
-            
+
             trann$gene_name<-"no_name"
-            
+
         }
         if(sum(!is.na(trann$gene_biotype))==0){trann$gene_biotype<-NULL}
         if(sum(!is.na(trann$gene_type))==0){trann$gene_type<-NULL}
         if(sum(!is.na(trann$gene_name))==0){trann$gene_name<-NULL}
         if(sum(!is.na(trann$gene_symbol))==0){trann$gene_symbol<-NULL}
         colnames(trann)<-c("gene_id","gene_biotype","gene_name","transcript_id","transcript_biotype")
-        
+
         trann<-DataFrame(trann)
-        
-        
-        
+
+
+
         #introns and transcript_ids/gene_ids
         unq_intr<-sort(unique(unlist(intron_names_tx)))
         names(unq_intr)<-NULL
         all_intr<-unlist(intron_names_tx)
-        
+
         ov<-findOverlaps(unq_intr,all_intr,type="equal")
         ov<-split(subjectHits(ov),queryHits(ov))
         a_nam<-CharacterList(lapply(ov,FUN = function(x){unique(names(all_intr)[x])}))
-        
+
         unq_intr$type="J"
         unq_intr$tx_name<-a_nam
-        
-        
+
+
         mat_genes<-match(unq_intr$tx_name,trann$transcript_id)
-        g<-unlist(apply(cbind(1:length(mat_genes),Y = elementNROWS(mat_genes)),FUN =function(x) rep(x[1],x[2]),MARGIN = 1))
+        g<-unlist(apply(cbind(seq_along(mat_genes),Y = elementNROWS(mat_genes)),FUN =function(x) rep(x[1],x[2]),MARGIN = 1))
         g2<-split(trann[unlist(mat_genes),"gene_id"],g)
         unq_intr$gene_id<-CharacterList(lapply(g2,unique))
-        
-        
+
+
         #filter ncRNA and ncIsof regions
         ncrnas<-nc_exons[!nc_exons%over%genes[trann$gene_id[trann$gene_biotype=="protein_coding"]]]
         ncisof<-nc_exons[nc_exons%over%genes[trann$gene_id[trann$gene_biotype=="protein_coding"]]]
-        
-        
+
+
         # define genetic codes to use
         # IMPORTANT : modify if needed (e.g. different organelles or species) check ids of GENETIC_CODE_TABLE for more info
-        
+
         ifs<-seqinfo(annotation)
         translations<-as.data.frame(ifs)
         translations$genetic_code<-"1"
-        
+
         #insert new codes for chromosome name
-        
+
         #Mammalian mito
         translations$genetic_code[rownames(translations)%in%c("chrM","MT","MtDNA","mit","mitochondrion")]<-"2"
-        
+
         #Yeast mito
         translations$genetic_code[rownames(translations)%in%c("Mito")]<-"3"
-        
+
         #Drosophila mito
         translations$genetic_code[rownames(translations)%in%c("dmel_mitochondrion_genome")]<-"5"
-        
+
         circs<-ifs@seqnames[which(ifs@is_circular)]
-        
-        
+
+
         #define start and stop codons (genome space)
-        
-        suppressPackageStartupMessages(library(pkgnm,character.only=TRUE))
-        genome<-get(pkgnm)
+
+        if(forge_BSgenome){
+            suppressPackageStartupMessages(library(pkgnm,character.only=TRUE))
+            genome<-get(pkgnm)
+        }else{
+            stopifnot(!is.null(genome_seq))
+            genome<-genome_seq
+            pkgnm<-NA
+        }
         tocheck<-as.character(runValue(seqnames(cds_tx)))
         tocheck<-cds_tx[!tocheck%in%circs]
+        width(tocheck)%>%sum%>%.[.<3]
         seqcds<-extractTranscriptSeqs(genome,transcripts = tocheck)
         cd<-unique(translations$genetic_code[!rownames(translations)%in%circs])
         trsl<-suppressWarnings(translate(seqcds,genetic.code = getGeneticCode(cd),if.fuzzy.codon = "solve"))
         trslend<-as.character(narrow(trsl,end = width(trsl),width = 1))
         stop_inannot<-NA
-        if(names(sort(table(trslend),decreasing = T)[1])=="*"){stop_inannot<-"*"}
-        
+        if(names(sort(table(trslend),decreasing = TRUE)[1])=="*"){stop_inannot<-"*"}
+
         cds_txscoords$gene_id<-trann$gene_id[match(as.vector(seqnames(cds_txscoords)),trann$transcript_id)]
         cds_cc<-cds_txscoords
         strand(cds_cc)<-"*"
         sta_cc<-resize(cds_cc,width = 1,"start")
-        sta_cc<-unlist(pmapFromTranscripts(sta_cc,exons_tx[seqnames(sta_cc)],ignore.strand=F))
+        sta_cc<-unlist(pmapFromTranscripts(sta_cc,exons_tx[seqnames(sta_cc)],ignore.strand=FALSE))
         sta_cc$gene_id<-trann$gene_id[match(names(sta_cc),trann$transcript_id)]
         sta_cc<-sta_cc[sta_cc$hit]
         strand(sta_cc)<-structure(as.vector(strand(transcripts_db)),names=transcripts_db$tx_name)[names(sta_cc)]
         sta_cc$type<-"start_codon"
         mcols(sta_cc)<-mcols(sta_cc)[,c("exon_rank","type","gene_id")]
-        
+
         sto_cc<-resize(cds_cc,width = 1,"end")
         #stop codon is the 1st nt, e.g. U of the UAA
         #To-do: update with regards to different organelles, and different annotations
         sto_cc<-shift(sto_cc,-2)
+
         if(is.na(stop_inannot)){sto_cc<-resize(trim(shift(sto_cc,3)),width = 1,fix = "end")}
-        
-        sto_cc<-unlist(pmapFromTranscripts(sto_cc,exons_tx[seqnames(sto_cc)],ignore.strand=F))
+
+        sto_cc<-unlist(pmapFromTranscripts(sto_cc,exons_tx[seqnames(sto_cc)],ignore.strand=FALSE))
         sto_cc<-sto_cc[sto_cc$hit]
         sto_cc$gene_id<-trann$gene_id[match(names(sto_cc),trann$transcript_id)]
         strand(sto_cc)<-structure(as.vector(strand(transcripts_db)),names=transcripts_db$tx_name)[names(sto_cc)]
         sto_cc$type<-"stop_codon"
         mcols(sto_cc)<-mcols(sto_cc)[,c("exon_rank","type","gene_id")]
-        
-        
+
+
         #define most common, most upstream/downstream
-        
+
         cat(paste("Defining most common start/stop codons ... ",date(),"\n",sep = ""))
-        
+
         start_stop_cc<-sort(c(sta_cc,sto_cc))
         start_stop_cc$transcript_id<-names(start_stop_cc)
         start_stop_cc$most_up_downstream<-FALSE
         start_stop_cc$most_frequent<-FALSE
-        
+
         df<-cbind.DataFrame(start(start_stop_cc),start_stop_cc$type,start_stop_cc$gene_id)
         colnames(df)<-c("start_pos","type","gene_id")
         upst<-by(df$start_pos,INDICES = df$gene_id,function(x){x==min(x) | x==max(x)})
         start_stop_cc$most_up_downstream<-unlist(upst[unique(df$gene_id)])
-        
+
         mostfr<-by(df[,c("start_pos","type")],INDICES = df$gene_id,function(x){
             mfreq<-table(x)
             x$start_pos%in%as.numeric(names(which(mfreq[,1]==max(mfreq[,1])))) | x$start_pos%in%as.numeric(names(which(mfreq[,2]==max(mfreq[,2]))))
         })
-        
+
         start_stop_cc$most_frequent<-unlist(mostfr[unique(df$gene_id)])
-        
+
         names(start_stop_cc)<-NULL
-        
-        
-        
+
+
+
         #define transcripts as containing frequent start/stop codons or most upstream ones, in relation with 5'UTR length
-        
+
         mostupstr_tx<-sum(LogicalList(split(start_stop_cc$most_up_downstream,start_stop_cc$transcript_id)))[as.character(seqnames(cds_txscoords))]
         cds_txscoords$upstr_stasto<-mostupstr_tx
         mostfreq_tx<-sum(LogicalList(split(start_stop_cc$most_frequent,start_stop_cc$transcript_id)))[as.character(seqnames(cds_txscoords))]
@@ -3593,17 +3654,17 @@ prepare_annotation_files<-function(annotation_directory,twobit_file,gtf_file,sci
         df<-cbind.DataFrame(as.character(seqnames(cds_txscoords)),width(cds_txscoords),start(cds_txscoords),cds_txscoords$mostfreq_stasto,cds_txscoords$gene_id)
         colnames(df)<-c("txid","cdslen","utr5len","var","gene_id")
         repres_freq<-by(df[,c("txid","cdslen","utr5len","var")],df$gene_id,function(x){
-            x<-x[order(x$var,x$utr5len,x$cdslen,decreasing = T),]
+            x<-x[order(x$var,x$utr5len,x$cdslen,decreasing = TRUE),]
             x<-x[x$var==max(x$var),]
             ok<-x$txid[which(x$cdslen==max(x$cdslen) & x$utr5len==max(x$utr5len) & x$var==max(x$var))][1]
             if(length(ok)==0 | is.na(ok[1])){ok<-x$txid[1]}
             ok
         })
-        
+
         df<-cbind.DataFrame(as.character(seqnames(cds_txscoords)),width(cds_txscoords),start(cds_txscoords),cds_txscoords$upstr_stasto,cds_txscoords$gene_id)
         colnames(df)<-c("txid","cdslen","utr5len","var","gene_id")
         repres_upstr<-by(df[,c("txid","cdslen","utr5len","var")],df$gene_id,function(x){
-            x<-x[order(x$var,x$utr5len,x$utr5len,decreasing = T),]
+            x<-x[order(x$var,x$utr5len,x$utr5len,decreasing = TRUE),]
             x<-x[x$var==max(x$var),]
             ok<-x$txid[which(x$cdslen==max(x$cdslen) & x$utr5len==max(x$utr5len) & x$var==max(x$var))][1]
             if(length(ok)==0 | is.na(ok[1])){ok<-x$txid[1]}
@@ -3612,12 +3673,12 @@ prepare_annotation_files<-function(annotation_directory,twobit_file,gtf_file,sci
         df<-cbind.DataFrame(as.character(seqnames(cds_txscoords)),width(cds_txscoords),start(cds_txscoords),cds_txscoords$upstr_stasto,cds_txscoords$gene_id)
         colnames(df)<-c("txid","cdslen","utr5len","var","gene_id")
         repres_len5<-by(df[,c("txid","cdslen","utr5len","var")],df$gene_id,function(x){
-            x<-x[order(x$utr5len,x$var,x$cdslen,decreasing = T),]
+            x<-x[order(x$utr5len,x$var,x$cdslen,decreasing = TRUE),]
             ok<-x$txid[which(x$utr5len==max(x$utr5len) & x$var==max(x$var))][1]
             if(length(ok)==0 | is.na(ok[1])){ok<-x$txid[1]}
             ok
         })
-        
+
         cds_txscoords$reprentative_mostcommon<-as.character(seqnames(cds_txscoords))%in%unlist(repres_freq)
         cds_txscoords$reprentative_boundaries<-as.character(seqnames(cds_txscoords))%in%unlist(repres_upstr)
         cds_txscoords$reprentative_5len<-as.character(seqnames(cds_txscoords))%in%unlist(repres_len5)
@@ -3629,67 +3690,56 @@ prepare_annotation_files<-function(annotation_directory,twobit_file,gtf_file,sci
         unq_stst$type<-CharacterList(lapply(ov,FUN = function(x){unique(start_stop_cc$type[x])}))
         unq_stst$transcript_id<-CharacterList(lapply(ov,FUN = function(x){start_stop_cc$transcript_id[x]}))
         unq_stst$gene_id<-CharacterList(lapply(ov,FUN = function(x){unique(start_stop_cc$gene_id[x])}))
-        
+
         unq_stst$reprentative_mostcommon<-sum(!is.na(match(unq_stst$transcript_id,unlist(as(repres_freq,"CharacterList")))))>0
         unq_stst$reprentative_boundaries<-sum(!is.na(match(unq_stst$transcript_id,unlist(as(repres_upstr,"CharacterList")))))>0
         unq_stst$reprentative_5len<-sum(!is.na(match(unq_stst$transcript_id,unlist(as(repres_len5,"CharacterList")))))>0
-        
-        
+
+
         #put in a list
-        GTF_annotation<-list(transcripts_db,txs_gene,ifs,unq_stst,cds_tx,intron_names_tx,cds_gen,exons_tx,nsns,unq_intr,genes,threeutrs,fiveutrs,ncisof,ncrnas,introns,intergenicRegions,trann,cds_txscoords,translations,pkgnm,stop_inannot)
-        names(GTF_annotation)<-c("txs","txs_gene","seqinfo","start_stop_codons","cds_txs","introns_txs","cds_genes","exons_txs","exons_bins","junctions","genes","threeutrs","fiveutrs","ncIsof","ncRNAs","introns","intergenicRegions","trann","cds_txs_coords","genetic_codes","genome_package","stop_in_gtf")
-        
-        txs_all<-unique(GTF_annotation$trann$transcript_id)
-        txs_exss<-unique(names(GTF_annotation$exons_txs))
-        
-        txs_notok<-txs_all[!txs_all%in%txs_exss]
-        if(length(txs_notok)>0){
-            set.seed(666)
-            cat(paste("Warning: ",length(txs_notok)," txs with incorrect/unspecified exon boundaries - e.g. trans-splicing events, examples: "
-                      ,paste(txs_notok[sample(1:length(txs_notok),size = min(3,length(txs_notok)),replace = F)],collapse=", ")," - ",date(),"\n",sep = ""))
-        }
-        
-        
+        pkgnm_or_faob<- if(is(genome_seq,'FaFile') ) {genome_seq} else {pkgnm}
+        GTF_annotation<-list(transcripts_db,txs_gene,ifs,unq_stst,cds_tx,intron_names_tx,cds_gen,exons_tx,nsns,unq_intr,genes,threeutrs,fiveutrs,ncisof,ncrnas,introns,intergenicRegions,trann,cds_txscoords,translations,pkgnm_or_faob,stop_inannot)
+        names(GTF_annotation)<-c("txs","txs_gene","seqinfo","start_stop_codons","cds_txs","introns_txs","cds_genes","exons_txs","exons_bins","junctions","genes","threeutrs","fiveutrs","ncIsof","ncRNAs","introns","intergenicRegions","trann","cds_txs_coords","genetic_codes","genome","stop_in_gtf")
+
         #Save as a RData object
-        save(GTF_annotation,file=paste(annotation_directory,"/",basename(gtf_file),"_Rannot",sep=""))
+        annot_file <- paste(annotation_directory,"/",basename(gtf_file),"_Rannot",sep="")
+        save(GTF_annotation,file=annot_file)
         cat(paste("Rannot object created!   ",date(),"\n",sep = ""))
-        
-        
+        GTF_annotation
+
         #create tables and bed files (with colnames, so with header)
-        if(export_bed_tables_TxDb==T){
+        if(export_bed_tables_TxDb==TRUE){
             cat(paste("Exporting annotation tables ... ",date(),"\n",sep = ""))
             for(bed_file in c("fiveutrs","threeutrs","ncIsof","ncRNAs","introns","cds_txs_coords")){
                 bf<-GTF_annotation[[bed_file]]
-                bf_t<-bf
-                if(length(bf)>0){
-                    bf_t<-data.frame(chromosome=seqnames(bf),start=start(bf),end=end(bf),name=".",score=width(bf),strand=strand(bf))
-                    meccole<-mcols(bf)
-                    for(mecc in names(meccole)){
-                        if(is(meccole[,mecc],"CharacterList") | is(meccole[,mecc],"NumericList") | is(meccole[,mecc],"IntegerList")){
-                            meccole[,mecc]<-paste(meccole[,mecc],collapse=";")
-                        }
+                bf_t<-data.frame(chromosome=seqnames(bf),start=start(bf),end=end(bf),name=rep(".",length(bf)),score=width(bf),strand=strand(bf))
+                meccole<-mcols(bf)
+                for(mecc in names(meccole)){
+                    if(is(meccole[,mecc],"CharacterList") | is(meccole[,mecc],"NumericList") | is(meccole[,mecc],"IntegerList")){
+                        meccole[,mecc]<-paste(meccole[,mecc],collapse=";")
                     }
-                    bf_t<-cbind.data.frame(bf_t,meccole)
                 }
-                write.table(bf_t,file = paste(annotation_directory,"/",bed_file,"_similbed.bed",sep=""),sep="\t",quote = FALSE,row.names = FALSE,col.names = F)
-                
+                bf_t<-cbind.data.frame(bf_t,meccole)
+                write.table(bf_t,file = paste(annotation_directory,"/",bed_file,"_similbed.bed",sep=""),sep="\t",quote = FALSE,row.names = FALSE)
+
             }
-            
+
             write.table(GTF_annotation$trann,file = paste(annotation_directory,"/table_gene_tx_IDs",sep=""),sep="\t",quote = FALSE,row.names = FALSE)
             seqi<-as.data.frame(GTF_annotation$seqinfo)
             seqi$chromosome<-rownames(seqi)
             write.table(seqi,file = paste(annotation_directory,"/seqinfo",sep=""),sep="\t",quote = FALSE,row.names = FALSE)
-            
+
             gen_cod<-as.data.frame(GTF_annotation$genetic_codes)
             gen_cod$chromosome<-rownames(gen_cod)
             write.table(gen_cod,file = paste(annotation_directory,"/genetic_codes",sep=""),sep="\t",quote = FALSE,row.names = FALSE)
             cat(paste("Exporting annotation tables --- Done! ",date(),"\n",sep = ""))
-            
+
         }
-        
+
     }
-    
+    return(annot_file)
 }
+
 
 
 
@@ -3831,9 +3881,9 @@ prepare_for_ORFquant<-function(annotation_file,bam_file,path_to_rl_cutoff_file=N
     
     if(!is.na(path_to_rl_cutoff_file)){
         rl_cutoff<-read.table(path_to_rl_cutoff_file,header = T,sep = "\t",stringsAsFactors = F)
-        
+        rl_cutoff <- rl_cutoff[,c('read_length', 'cutoff' , 'comp' )]  
         if(dim(rl_cutoff)[2]!=3){stop(
-            paste("Error: please format the rl_cutoff file correctly, using 3 tab-separated columns with 'rl', 'cutoff' and 'compartment' as column names! ",date(),sep="")
+            paste("Error: please format the rl_cutoff file correctly, using 3 tab-separated columns with 'read_length', 'cutoff' and 'compartment' as column names! ",date(),sep="")
         )}
         
         rl_cutoffs_comp<-split(rl_cutoff,rl_cutoff[,3])
@@ -4483,6 +4533,7 @@ prepare_for_ORFquant<-function(annotation_file,bam_file,path_to_rl_cutoff_file=N
     
     save(for_ORFquant,file = paste(dest_name,"for_ORFquant",sep = "_"))
     
+    paste(dest_name,"for_ORFquant",sep = "_")
 }
 
 
@@ -4525,7 +4576,6 @@ plot_ORFquant_results<-function(for_ORFquant_file,ORFquant_output_file,annotatio
     
     
     cat(paste("Plotting ORFquant results for ",ORFquant_output_file," ... ",date(),"\n",sep = ""))
-    
     if(is.na(prefix)){prefix<-gsub(gsub(basename(ORFquant_output_file),pattern = "_final_ORFquant_results",replacement = ""),pattern = "final_ORFquant_results",replacement = "")}
     
     for (f in c(for_ORFquant_file,ORFquant_output_file,annotation_file)){
@@ -4826,7 +4876,7 @@ plot_ORFquant_results<-function(for_ORFquant_file,ORFquant_output_file,annotatio
     tpms<-cnts[match(names(ch_txs_sel),cnts$gene_id),"TPM"]
     pct_sel<-(elementNROWS(ch_txs_sel))/tot_n_tx*100
     nsels<-elementNROWS(ch_txs_sel)
-    qnt<-cut(nsels,breaks = c(0,3,6,9,max(nsels)),include.lowest = T)
+    qnt<-cut(nsels,breaks = c(0,3,6,9,max(c(12,nsels))),include.lowest = T)
     qnt<-gsub(qnt,pattern = ",",replacement = "-")
     qnt<-gsub(qnt,pattern = "\\[",replacement = "")
     qnt<-gsub(qnt,pattern = "]",replacement = "")
