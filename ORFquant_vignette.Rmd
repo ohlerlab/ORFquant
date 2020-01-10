@@ -30,7 +30,7 @@ suppressPackageStartupMessages(library("ORFquant"))
 
 ## Exploring the annotation
 
-As in the *Ribo-seQC* package [2] (https://github.com/lcalviell/Ribo-seQC), we use a .gtf file and a .2bit file to create a comprehensive list of annotated transcript and genomic features. Let's now download annotation for *Homo sapiens*: a subset of the GENCODE 25 annotation (https://www.gencodegenes.org/human/release_25.html) and the corresponding genome sequences.
+As in the *Ribo-seQC* package [2] (https://github.com/ohlerlabl/Ribo-seQC), we use a .gtf file and a .2bit file to create a comprehensive list of annotated transcript and genomic features. Let's now download annotation for *Homo sapiens*: a subset of the GENCODE 25 annotation (https://www.gencodegenes.org/human/release_25.html) and the corresponding genome sequences.
 
 ```{r create_dirs_hum}
 download.file("https://drive.google.com/uc?export=download&id=1n6UA5cSz6djx0dY_7sI57177T-kyZhhT",destfile = "test_human.2bit")

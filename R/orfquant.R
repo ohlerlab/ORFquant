@@ -4824,7 +4824,9 @@ plot_ORFquant_results<-function(for_ORFquant_file,ORFquant_output_file,annotatio
     
     
     df<-melt(table(maxiso))
-    df$maxiso<-factor(df$maxiso,levels = rev(df$maxiso))
+    bins <- df$maxiso
+    # bins <- bins[order(as.numeric(gsub('-\\d+$','',df$maxiso)))]
+    df$maxiso<-factor(df$maxiso,levels = bins)
     c<-ggplot(df,aes(x=maxiso,y=value,fill="dark grey"))
     c<-c + geom_bar(stat="identity",position = "stack",colour="black")
     #a<-a + scale_y_log10(breaks=c(1,10,100,1000,10000),limits=c(1,15000))
@@ -5574,6 +5576,14 @@ plot_ORFquant_results<-function(for_ORFquant_file,ORFquant_output_file,annotatio
     }
     
     save(list_ORFquant_plots,file = paste0(output_plots_path,"/",prefix,"_","ORFquant_plots_RData"))
+
+    # allplots <- cowplot::align_plots(plotlist=list_ORFquant_plots[c(9,5,7)], align = "h", axis='bt')
+    # allplots <- ggpubr::ggarrange(plotlist=allplots,nrow=1,ncol=3)
+    # pdf(filename= paste0(output_plots_path,"/","allplotspanelled.pdf"),
+    #     width = 5 * 3,
+    #     height = 5
+    # );allplots;dev.off()
+
     for(i in names(list_ORFquant_plots)){
         pdf(file = paste0(output_plots_path,"/",prefix,"_",i,".pdf"),width = list_ORFquant_plots[[i]][["pars"]][1] ,height = list_ORFquant_plots[[i]][["pars"]][2])
         print(list_ORFquant_plots[[i]])
@@ -5581,6 +5591,7 @@ plot_ORFquant_results<-function(for_ORFquant_file,ORFquant_output_file,annotatio
     }
     cat(paste("Plotting ORFquant results for ",ORFquant_output_file,"  --- Done! ",date(),"\n",sep = ""))
     
+
 }
 
 
