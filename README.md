@@ -25,11 +25,7 @@ To install *ORFquant*:
 
 ```
 library("devtools")
-<<<<<<< HEAD
 install_github(repo = "ohlerlab/ORFquant")
-=======
-install_github(repo = "ohlerlabl/ORFquant")
->>>>>>> 2bf8798dae0aa005f5b2252c56f46b5b9c31734c
 
 library("ORFquant")
 
