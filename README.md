@@ -1,4 +1,9 @@
 # ORFquant
+
+**NOTE** This is version 1.01 of ORFquant, which is referenced in the "Methods in Molecular Biology (MiMB)" volume on Ribosome Profiling. For suggestions/bug reports, the most recent version of ORFquant can be found at:
+
+https://github.com/lcalviell/ORFquant
+
 An R package for Splice-aware quantification of translation using Ribo-seq data
 
 
@@ -18,14 +23,14 @@ More details can be found in our manuscript:
 
 https://www.biorxiv.org/content/10.1101/608794v2
 
-We recommend users to have a look at the vignette: https://htmlpreview.github.io/?https://github.com/lcalviell/ORFquant/blob/master/ORFquant_vignette.html, or our manual (*ORFquant_manual.pdf*).
+We recommend users to have a look at the vignette: https://htmlpreview.github.io/?https://github.com/ohlerlab/ORFquant/blob/master/ORFquant_vignette.html, or our manual (*ORFquant_manual.pdf*).
 
 
 To install *ORFquant*:
 
 ```
 library("devtools")
-install_github(repo = "lcalviell/ORFquant")
+install_github(repo = "ohlerlab/ORFquant")
 
 library("ORFquant")
 
@@ -41,7 +46,7 @@ parses a *.gtf* and a *.2bit* file. (this need to be done once per each annotati
 ```
 ?prepare_for_ORFquant
 ```
-or (**recommended**) the *Ribo-seQC* package (https://github.com/lcalviell/Ribo-seQC) can create input files for *ORFquant* using a Ribo-seq .bam file.
+or (**recommended**) the *Ribo-seQC* package (https://github.com/ohlerlab/RiboseQC) can create input files for *ORFquant* using a Ribo-seq .bam file.
 
 
 ```
@@ -54,7 +59,7 @@ Please check the vignette for an example workflow.
 
 For any question, please email:
 
-calviello.l.bio@gmail.com or uwe.ohler@mdc-berlin.de
+dermot.p.harnett@gmail.com or calviello.l.bio@gmail.com or uwe.ohler@mdc-berlin.de
 
 
 Enjoy!
